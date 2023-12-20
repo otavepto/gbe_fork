@@ -21,7 +21,7 @@ env:
 
   DEPS_CACHE_KEY: emu-deps-linux
   DEPS_CACHE_DIR: build-linux-deps
-  
+
   PACKAGE_ROOT_PATH: "build-linux/package"
   
 jobs:
@@ -31,6 +31,12 @@ jobs:
     steps:
     - name: Lookup cache for deps
       id: emu-deps-cache-step
+      # !tag && !pull_request
+      # also you could use this: github.event_name != 'pull_request'
+      if: |
+        !startsWith(github.ref, 'refs/tags/') &&
+        !startsWith(github.ref, 'refs/pull/')
+        
       uses: actions/cache@v3
       with:
         key: ${{ env.DEPS_CACHE_KEY }}
@@ -72,7 +78,12 @@ jobs:
 
 ### deps
     - name: Grab cache for deps
-      id: emu-deps-cache-step
+      # !tag && !pull_request
+      # also you could use this: github.event_name != 'pull_request'
+      if: |
+        !startsWith(github.ref, 'refs/tags/') &&
+        !startsWith(github.ref, 'refs/pull/')
+        
       uses: actions/cache@v3
       with:
         key: ${{ env.DEPS_CACHE_KEY }}
