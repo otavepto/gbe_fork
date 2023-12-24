@@ -26,6 +26,7 @@ extern std::recursive_mutex global_mutex;
 extern const std::chrono::time_point<std::chrono::high_resolution_clock> startup_counter;
 extern const std::chrono::time_point<std::chrono::system_clock> startup_time;
 
+void randombytes(char *buf, size_t size);
 std::string get_env_variable(std::string name);
 bool set_env_variable(std::string name, std::string value);
 bool check_timedout(std::chrono::high_resolution_clock::time_point old, double timeout);
@@ -94,7 +95,8 @@ struct Steam_Call_Result {
     int iCallback;
 };
 
-int generate_random_int();
+unsigned generate_account_id();
+CSteamID generate_steam_anon_user();
 SteamAPICall_t generate_steam_api_call_id();
 CSteamID generate_steam_id_user();
 CSteamID generate_steam_id_server();
@@ -303,7 +305,6 @@ public:
     }
 };
 
-
 struct Steam_Call_Back {
     std::vector<class CCallbackBase *> callbacks;
     std::vector<std::vector<char>> results;
@@ -394,35 +395,6 @@ public:
             c.second.results.clear();
         }
     }
-};
-
-struct Auth_Ticket_Data {
-    CSteamID id;
-    uint64 number;
-    std::chrono::high_resolution_clock::time_point created;
-};
-
-class Auth_Ticket_Manager {
-    class Settings *settings;
-    class Networking *network;
-    class SteamCallBacks *callbacks;
-
-    void launch_callback(CSteamID id, EAuthSessionResponse resp, double delay=0);
-    void launch_callback_gs(CSteamID id, bool approved);
-    std::vector<struct Auth_Ticket_Data> inbound, outbound;
-public:
-    Auth_Ticket_Manager(class Settings *settings, class Networking *network, class SteamCallBacks *callbacks);
-
-    void Callback(Common_Message *msg);
-    uint32 getTicket( void *pTicket, int cbMaxTicket, uint32 *pcbTicket );
-    uint32 getWebApiTicket( const char *pchIdentity );
-    void cancelTicket(uint32 number);
-    EBeginAuthSessionResult beginAuth(const void *pAuthTicket, int cbAuthTicket, CSteamID steamID);
-    bool endAuth(CSteamID id);
-    uint32 countInboundAuth();
-    bool SendUserConnectAndAuthenticate( uint32 unIPClient, const void *pvAuthBlob, uint32 cubAuthBlobSize, CSteamID *pSteamIDUser );
-    CSteamID fakeUser();
-    Auth_Ticket_Data getTicketData( void *pTicket, int cbMaxTicket, uint32 *pcbTicket );
 };
 
 struct RunCBs {

@@ -264,7 +264,7 @@ static void load_gamecontroller_settings(Settings *settings)
             }
 
             settings->controller_settings.action_sets[action_set_name] = button_pairs;
-            PRINT_DEBUG("Added %u action names to %s\n", button_pairs.size(), action_set_name.c_str());
+            PRINT_DEBUG("Added %zu action names to %s\n", button_pairs.size(), action_set_name.c_str());
         }
     }
 
@@ -801,7 +801,10 @@ static void parse_mods_folder(class Settings *settings_client, Settings *setting
                 Mod_entry newMod;
                 newMod.id = std::stoull(mod.key());
                 newMod.title = mod.value().value("title", std::string(mod.key()));
-                newMod.path = mod_path + PATH_SEPARATOR + std::string(mod.key());
+                newMod.path = mod.value().value("path", std::string(""));
+                if (newMod.path.empty()) {
+                    newMod.path = mod_path + PATH_SEPARATOR + std::string(mod.key());
+                }
                 newMod.fileType = k_EWorkshopFileTypeCommunity;
                 newMod.description = mod.value().value("description", std::string(""));
                 newMod.steamIDOwner = mod.value().value("steam_id_owner", (uint64)0);
@@ -820,9 +823,14 @@ static void parse_mods_folder(class Settings *settings_client, Settings *setting
                 newMod.workshopItemURL = mod.value().value("workshop_item_url", std::string(""));
                 newMod.votesUp = mod.value().value("upvotes", (uint32)1);
                 newMod.votesDown = mod.value().value("downvotes", (uint32)0);
-                newMod.score = 1.0f;
+                newMod.score = mod.value().value("score", 1.0f);
                 newMod.numChildren = mod.value().value("num_children", (uint32)0);
-                newMod.previewURL = "file://" + Local_Storage::get_game_settings_path() + "mod_images/" + newMod.previewFileName;
+                newMod.previewURL = mod.value().value("preview_url", std::string(""));
+                if (newMod.previewURL.empty()) {
+                    newMod.previewURL = newMod.previewFileName.empty()
+                        ?  ""
+                        : "file://" + Local_Storage::get_game_settings_path() + "mod_images/" + newMod.previewFileName;
+                }
                 settings_client->addMod(newMod.id, newMod.title, newMod.path);
                 settings_server->addMod(newMod.id, newMod.title, newMod.path);
                 settings_client->addModDetails(newMod.id, newMod);
@@ -831,7 +839,7 @@ static void parse_mods_folder(class Settings *settings_client, Settings *setting
                 PRINT_DEBUG("MODLOADER ERROR: %s\n", e.what());
             }
         }
-    } else {
+    } else { // invalid mods.json or doesn't exist
         std::vector<std::string> paths = Local_Storage::get_filenames_path(mod_path);
         for (auto & p: paths) {
             PRINT_DEBUG("mod directory %s\n", p.c_str());
@@ -993,6 +1001,8 @@ uint32 create_localstorage_settings(Settings **settings_client_out, Settings **s
     bool disable_account_avatar = false;
     bool achievement_bypass = false;
     bool is_beta_branch = false;
+    bool use_gc_token = false;
+    bool enable_new_app_ticket = false;
     int build_id = 10;
 
     bool warn_forced = false;
@@ -1040,6 +1050,10 @@ uint32 create_localstorage_settings(Settings **settings_client_out, Settings **s
                 warn_forced = parse_force_listen_port(port, steam_settings_path);
             } else if (p == "build_id.txt") {
                 parse_build_id(build_id, steam_settings_path);
+            } else if (p == "new_app_ticket.txt") {
+                enable_new_app_ticket = true;
+            } else if (p == "gc_token.txt") {
+                use_gc_token = true;
             }
         }
     }
@@ -1082,6 +1096,10 @@ uint32 create_localstorage_settings(Settings **settings_client_out, Settings **s
     settings_server->achievement_bypass = achievement_bypass;
     settings_client->is_beta_branch = is_beta_branch;
     settings_server->is_beta_branch = is_beta_branch;
+    settings_client->enable_new_app_ticket = enable_new_app_ticket;
+    settings_server->enable_new_app_ticket = enable_new_app_ticket;
+    settings_client->use_gc_token = use_gc_token;
+    settings_server->use_gc_token = use_gc_token;
 
     if (local_save) {
         settings_client->local_save = save_path;
