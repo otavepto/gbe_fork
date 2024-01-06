@@ -17,6 +17,8 @@
 
 #include "dll/settings_parser.h"
 
+constexpr static const char * const whitespaces = " \t\r\n";
+
 static void consume_bom(std::ifstream &input)
 {
     int bom[3];
@@ -773,7 +775,6 @@ static void parse_force_branch_name(class Settings *settings_client, Settings *s
         std::string line;
         getline( input, line );
         
-        constexpr const char * const whitespaces = " \t\r\n";
         size_t start = line.find_first_not_of(whitespaces);
         size_t end = line.find_last_not_of(whitespaces);
         line = start == end
@@ -953,6 +954,35 @@ static void parse_build_id(int &build_id, std::string &steam_settings_path)
     }
 }
 
+// auto_accept_invite.txt
+static void parse_auto_accept_invite(class Settings *settings_client, Settings *settings_server)
+{
+    bool warn_forced = false;
+
+    std::string auto_accept_list_path = Local_Storage::get_game_settings_path() + "auto_accept_invite.txt";
+    std::ifstream input( utf8_decode(auto_accept_list_path) );
+    if (input.is_open()) {
+        consume_bom(input);
+        for( std::string line; getline( input, line ); ) {
+                
+            size_t start = line.find_first_not_of(whitespaces);
+            size_t end = line.find_last_not_of(whitespaces);
+            line = start == end
+                ? std::string()
+                : line.substr(start, end - start + 1);
+            
+            if (!line.empty()) {
+                try {
+                    auto friend_id = std::stoull(line);
+                    settings_client->auto_accept_invites.insert((uint64_t)friend_id);
+                    settings_server->auto_accept_invites.insert((uint64_t)friend_id);
+                    PRINT_DEBUG("Auto accepting invitations from user with ID (SteamID64) = " "%" PRIu64 "\n", friend_id);
+                } catch (...) {}
+            }
+        }
+    }
+}
+
 uint32 create_localstorage_settings(Settings **settings_client_out, Settings **settings_server_out, Local_Storage **local_storage_out)
 {
     std::string program_path = Local_Storage::get_program_path();
@@ -995,7 +1025,10 @@ uint32 create_localstorage_settings(Settings **settings_client_out, Settings **s
     bool disable_overlay = false;
     bool disable_overlay_achievement_notification = false;
     bool disable_overlay_friend_notification = false;
-    bool disable_overlay_warning = false;
+    bool disable_overlay_warning_forced_setting = false;
+    bool disable_overlay_warning_local_save = false;
+    bool disable_overlay_warning_bad_appid = false;
+    bool disable_overlay_warning_any = false;
     bool disable_lobby_creation = false;
     bool disable_source_query = false;
     bool disable_account_avatar = false;
@@ -1005,7 +1038,7 @@ uint32 create_localstorage_settings(Settings **settings_client_out, Settings **s
     bool enable_new_app_ticket = false;
     int build_id = 10;
 
-    bool warn_forced = false;
+    bool warn_forced_setting = false;
 
     // boolean flags and forced configurations
     {
@@ -1028,8 +1061,14 @@ uint32 create_localstorage_settings(Settings **settings_client_out, Settings **s
                 disable_overlay_achievement_notification = true;
             } else if (p == "disable_overlay_friend_notification.txt") {
                 disable_overlay_friend_notification = true;
-            } else if (p == "disable_overlay_warning.txt") {
-                disable_overlay_warning = true;
+            } else if (p == "disable_overlay_warning_forced_setting.txt") {
+                disable_overlay_warning_forced_setting = true;
+            } else if (p == "disable_overlay_warning_local_save.txt") {
+                disable_overlay_warning_local_save = true;
+            } else if (p == "disable_overlay_warning_bad_appid.txt") {
+                disable_overlay_warning_bad_appid = true;
+            } else if (p == "disable_overlay_warning_any.txt") {
+                disable_overlay_warning_any = true;
             } else if (p == "disable_lobby_creation.txt") {
                 disable_lobby_creation = true;
             } else if (p == "disable_source_query.txt") {
@@ -1041,13 +1080,13 @@ uint32 create_localstorage_settings(Settings **settings_client_out, Settings **s
             } else if (p == "is_beta_branch.txt") {
                 is_beta_branch = true;
             } else if (p == "force_language.txt") {
-                warn_forced = parse_force_language(language, steam_settings_path);
+                warn_forced_setting |= parse_force_language(language, steam_settings_path);
             } else if (p == "force_steamid.txt") {
-                warn_forced = parse_force_user_steam_id(user_id, steam_settings_path);
+                warn_forced_setting |= parse_force_user_steam_id(user_id, steam_settings_path);
             } else if (p == "force_account_name.txt") {
-                warn_forced = parse_force_account_name(name, steam_settings_path);
+                warn_forced_setting |= parse_force_account_name(name, steam_settings_path);
             } else if (p == "force_listen_port.txt") {
-                warn_forced = parse_force_listen_port(port, steam_settings_path);
+                warn_forced_setting |= parse_force_listen_port(port, steam_settings_path);
             } else if (p == "build_id.txt") {
                 parse_build_id(build_id, steam_settings_path);
             } else if (p == "new_app_ticket.txt") {
@@ -1066,14 +1105,30 @@ uint32 create_localstorage_settings(Settings **settings_client_out, Settings **s
     settings_server->custom_broadcasts = custom_broadcasts;
     settings_client->disable_networking = disable_networking;
     settings_server->disable_networking = disable_networking;
+
     settings_client->disable_overlay = disable_overlay;
     settings_server->disable_overlay = disable_overlay;
     settings_client->disable_overlay_achievement_notification = disable_overlay_achievement_notification;
     settings_server->disable_overlay_achievement_notification = disable_overlay_achievement_notification;
     settings_client->disable_overlay_friend_notification = disable_overlay_friend_notification;
     settings_server->disable_overlay_friend_notification = disable_overlay_friend_notification;
-    settings_client->disable_overlay_warning = disable_overlay_warning;
-    settings_server->disable_overlay_warning = disable_overlay_warning;
+    // overlay warning for forced setting
+    settings_client->overlay_warn_forced_setting = warn_forced_setting;
+    settings_server->overlay_warn_forced_setting = warn_forced_setting;
+    settings_client->disable_overlay_warning_forced_setting = disable_overlay_warning_forced_setting;
+    settings_server->disable_overlay_warning_forced_setting = disable_overlay_warning_forced_setting;
+    // overlay warning for local save
+    settings_client->overlay_warn_local_save = local_save;
+    settings_server->overlay_warn_local_save = local_save;
+    settings_client->disable_overlay_warning_local_save = disable_overlay_warning_local_save;
+    settings_server->disable_overlay_warning_local_save = disable_overlay_warning_local_save;
+    // overlay warning for bad app ID (= 0)
+    settings_client->disable_overlay_warning_bad_appid = disable_overlay_warning_bad_appid;
+    settings_server->disable_overlay_warning_bad_appid = disable_overlay_warning_bad_appid;
+    // disable any overlay warning
+    settings_client->disable_overlay_warning_any = disable_overlay_warning_any;
+    settings_server->disable_overlay_warning_any = disable_overlay_warning_any;
+
     settings_client->disable_lobby_creation = disable_lobby_creation;
     settings_server->disable_lobby_creation = disable_lobby_creation;
     settings_client->disable_source_query = disable_source_query;
@@ -1082,10 +1137,6 @@ uint32 create_localstorage_settings(Settings **settings_client_out, Settings **s
     settings_server->disable_account_avatar = disable_account_avatar;
     settings_client->build_id = build_id;
     settings_server->build_id = build_id;
-    settings_client->warn_forced = warn_forced;
-    settings_server->warn_forced = warn_forced;
-    settings_client->warn_local_save = local_save;
-    settings_server->warn_local_save = local_save;
     settings_client->supported_languages = supported_languages;
     settings_server->supported_languages = supported_languages;
     settings_client->steam_deck = steam_deck_mode;
@@ -1131,6 +1182,8 @@ uint32 create_localstorage_settings(Settings **settings_client_out, Settings **s
     parse_mods_folder(settings_client, settings_server, local_storage);
 
     load_gamecontroller_settings(settings_client);
+
+    parse_auto_accept_invite(settings_client, settings_server);
 
     *settings_client_out = settings_client;
     *settings_server_out = settings_server;

@@ -1,3 +1,16 @@
+* addded new `auto_accept_invite.txt` setting to automatically accept game/lobby invites from this list, each SteamID64 on a separate line
+* fixed the condition of `warn_forced_setting`, previously it may be reset back to `false` accidentally
+* deprecated `disable_overlay_warning.txt` in `steam_settings` folder in favor of new options/files
+* added new `disable_overlay_warning_*.txt` settings to disable certain or all warnings in the overlay
+  * `disable_overlay_warning_forced_setting.txt`:  
+    - disable the warning for the usage of any file `force_*.txt` in the overlay
+    - unlocks the settigs menu, this may result in an undesirable output
+  * `disable_overlay_warning_bad_appid.txt`: disable the warning for bad app ID (when app ID = 0) in the overlay
+  * `disable_overlay_warning_local_save.txt`: disable the warning for using local save in the overlay
+  * `disable_overlay_warning_any.txt`: all the above
+
+---
+
 ## 2024/1/5
 
 * **[Detanup01]** Fixed parsing of old Steam interfaces, reported by **[LuKeStorm]**: https://cs.rin.ru/forum/viewtopic.php?p=2971639#p2971639  

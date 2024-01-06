@@ -48,6 +48,7 @@ enum notification_type
     notification_type_message = 0,
     notification_type_invite,
     notification_type_achievement,
+    notification_type_auto_accept_invite,
 };
 
 struct Notification
@@ -105,8 +106,14 @@ class Steam_Overlay
     bool show_achievements, show_settings;
     void *fonts_atlas;
 
-    bool disable_forced, local_save, warning_forced;
-    uint32_t appid;
+    // disable input when force_*.txt file is used
+    bool disable_user_input;
+    // warn when force_*.txt file is used
+    bool warn_forced_setting;
+    // warn when using local save
+    bool warn_local_save;
+    // warn when app ID = 0
+    bool warn_bad_appid;
 
     char username_text[256];
     std::atomic_bool save_settings;
@@ -144,6 +151,7 @@ class Steam_Overlay
 
     void NotifyUser(friend_window_state& friend_state);
     void NotifyUserAchievement();
+    void NotifySoundAutoAcceptFriendInvite();
 
     // Right click on friend
     void BuildContextMenu(Friend const& frd, friend_window_state &state);
@@ -189,6 +197,7 @@ public:
     void AddMessageNotification(std::string const& message);
     void AddAchievementNotification(nlohmann::json const& ach);
     void AddInviteNotification(std::pair<const Friend, friend_window_state> &wnd_state);
+    void AddAutoAcceptInviteNotification();
 };
 
 #else
@@ -231,6 +240,7 @@ public:
     void AddMessageNotification(std::string const& message) {}
     void AddAchievementNotification(nlohmann::json const& ach) {}
     void AddInviteNotification(std::pair<const Friend, friend_window_state> &wnd_state) {}
+    void AddAutoAcceptInviteNotification() {}
 };
 
 #endif
