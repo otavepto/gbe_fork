@@ -81,7 +81,7 @@ struct Overlay_Achievement
     std::weak_ptr<uint64_t> icon;
     std::weak_ptr<uint64_t> icon_gray;
 
-    constexpr const static int ICON_LOAD_MAX_TRIALS = 3;
+    constexpr const static int ICON_LOAD_MAX_TRIALS = 10;
     uint8_t icon_load_trials = ICON_LOAD_MAX_TRIALS;
     uint8_t icon_gray_load_trials = ICON_LOAD_MAX_TRIALS;
 };
