@@ -113,6 +113,12 @@ class Steam_Overlay
     // friend id, show client window (to chat and accept invite maybe)
     std::map<Friend, friend_window_state, Friend_Less> friends{};
 
+    std::chrono::high_resolution_clock::time_point setup_time{};
+    std::chrono::high_resolution_clock::time_point renderer_hook_init_time{};
+    std::atomic_bool requested_renderer_detector = false;
+    bool renderer_detector_delay_finished = false;
+    bool renderer_hook_init_finished = false;
+    
     bool is_ready = false;
 
     ENotificationPosition notif_position = ENotificationPosition::k_EPositionBottomLeft;
@@ -193,6 +199,7 @@ class Steam_Overlay
     void invite_friend(uint64 friend_id, class Steam_Friends* steamFriends, class Steam_Matchmaking* steamMatchmaking);
 
     void request_renderer_detector();
+    void free_renderer_detector();
     void renderer_detector_delay_thread();
     void renderer_hook_init_thread();
     
