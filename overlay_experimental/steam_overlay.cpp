@@ -143,6 +143,7 @@ Steam_Overlay::Steam_Overlay(Settings* settings, SteamCallResults* callback_resu
 
     run_every_runcb->add(&Steam_Overlay::overlay_run_callback, this);
     this->network->setCallback(CALLBACK_ID_STEAM_MESSAGES, settings->get_local_steam_id(), &Steam_Overlay::overlay_networking_callback, this);
+    
 }
 
 Steam_Overlay::~Steam_Overlay()
@@ -154,51 +155,72 @@ Steam_Overlay::~Steam_Overlay()
 
 void Steam_Overlay::request_renderer_detector()
 {
-    PRINT_DEBUG("Steam_Overlay::request_renderer_detector\n");
-    // request renderer detection
-    future_renderer = InGameOverlay::DetectRenderer();
+    bool not_yet = false;
+    if (requested_renderer_detector.compare_exchange_weak(not_yet, true)) {
+        PRINT_DEBUG("Steam_Overlay::request_renderer_detector\n");
+        future_renderer = InGameOverlay::DetectRenderer();
+    }
+}
+
+void Steam_Overlay::free_renderer_detector()
+{
+    bool already_requested = true;
+    if (requested_renderer_detector.compare_exchange_weak(already_requested, false)) {
+        PRINT_DEBUG("Steam_Overlay::free_renderer_detector\n");
+        // free detector resources and check for failure
+        InGameOverlay::StopRendererDetection();
+        InGameOverlay::FreeDetector();
+    }
 }
 
 void Steam_Overlay::renderer_detector_delay_thread()
 {
-    PRINT_DEBUG("Steam_Overlay::renderer_detector_delay_thread waiting for %i seconds\n", settings->overlay_hook_delay_sec);
-    // give games some time to init their renderer (DirectX, OpenGL, etc...)
-    int timeout_ctr = settings->overlay_hook_delay_sec /*seconds*/ * 1000 /*milli per second*/ / renderer_detector_polling_ms;
-    while (timeout_ctr > 0 && setup_overlay_called ) {
-        --timeout_ctr;
-        std::this_thread::sleep_for(std::chrono::milliseconds(renderer_detector_polling_ms));
-    }
+    if (renderer_detector_delay_finished || !setup_overlay_called) return;
 
-    // early exit before we get a chance to do anything
-    if (!setup_overlay_called) {
-        PRINT_DEBUG("Steam_Overlay::renderer_detector_delay_thread early exit before renderer detection\n");
-        return;
+    if (settings->overlay_hook_delay_sec > 0) {
+        auto duration = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - setup_time).count();
+        if (duration < settings->overlay_hook_delay_sec) {
+            return;
+        } else {
+            PRINT_DEBUG("Steam_Overlay::renderer_detector_delay_thread finished waiting for %lli seconds\n", duration);
+        }
     }
     
-    // request renderer detection
     request_renderer_detector();
-    renderer_hook_init_thread();
+    renderer_hook_init_time = std::chrono::high_resolution_clock::now();
+    renderer_detector_delay_finished = true;
 }
 
 void Steam_Overlay::renderer_hook_init_thread()
 {
-    PRINT_DEBUG("Steam_Overlay::renderer_hook_init_thread\n");
-    int timeout_ctr = settings->overlay_renderer_detector_timeout_sec /*seconds*/ * 1000 /*milli per second*/ / renderer_detector_polling_ms;
-    while (timeout_ctr > 0 && setup_overlay_called && future_renderer.wait_for(std::chrono::milliseconds(renderer_detector_polling_ms)) != std::future_status::ready) {
-        --timeout_ctr;
+    if (renderer_hook_init_finished || !renderer_detector_delay_finished) return;
+    // stop request will cleanup resources
+    if (!setup_overlay_called) return;
+
+    auto duration = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - renderer_hook_init_time).count();
+    bool hook_ready = future_renderer.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready;
+
+    if (!hook_ready) {
+        if (duration > settings->overlay_renderer_detector_timeout_sec) { // timeout
+            free_renderer_detector();
+            renderer_hook_init_finished = true;
+            PRINT_DEBUG(
+                "Steam_Overlay::renderer_hook_init_thread failed to detect renderer, timeout=%lli seconds, overlay was set up=%i, hook intance state=%i\n",
+                duration, (int)setup_overlay_called, (int)hook_ready
+            );
+        }
+
+        return;
     }
 
-    // free detector resources and check for failure
-    InGameOverlay::StopRendererDetection();
-    InGameOverlay::FreeDetector();
-    // exit on failure
-    bool final_chance = (future_renderer.wait_for(std::chrono::milliseconds(1)) == std::future_status::ready) && future_renderer.valid();
-    // again check for 'setup_overlay_called' to be extra sure that the overlay wasn't deinitialized
-    if (!setup_overlay_called || !final_chance || timeout_ctr <= 0) {
-        PRINT_DEBUG(
-            "Steam_Overlay::renderer_hook_init_thread failed to detect renderer, ctr=%i, overlay was set up=%i, hook intance state=%i\n",
-            timeout_ctr, (int)setup_overlay_called, (int)final_chance
-        );
+    PRINT_DEBUG("Steam_Overlay::renderer_hook_init_thread hook is ready to be started\n");
+
+    // we get here once we have a renderer detector
+    free_renderer_detector();
+    renderer_hook_init_finished = true;
+
+    if (!future_renderer.valid()) {
+        PRINT_DEBUG("Steam_Overlay::renderer_hook_init_thread failed, future_renderer was invalid!\n");
         return;
     }
 
@@ -1508,6 +1530,9 @@ void Steam_Overlay::networking_msg_received(Common_Message *msg)
 
 void Steam_Overlay::steam_run_callback()
 {
+    renderer_detector_delay_thread();
+    renderer_hook_init_thread();
+
     std::lock_guard<std::recursive_mutex> lock(overlay_mutex);
     
     if (!Ready()) return;
@@ -1646,13 +1671,12 @@ void Steam_Overlay::SetupOverlay()
 
     bool not_called_yet = false;
     if (setup_overlay_called.compare_exchange_weak(not_called_yet, true)) {
-        if (settings->overlay_hook_delay_sec > 0) {
-            std::thread([this]() { renderer_detector_delay_thread(); }).detach();
-        } else {
-            // "HITMAN 3" fails if the detector was started later (after a delay)
-            // so request the renderer detector immediately (the old behavior)
-            request_renderer_detector();
-            std::thread([this]() { renderer_hook_init_thread(); }).detach();
+        setup_time = std::chrono::high_resolution_clock::now();
+        
+        // "HITMAN 3" fails if the detector was started later (after a delay)
+        // so request the renderer detector immediately (the old behavior)
+        if (!settings->overlay_hook_delay_sec) {
+            renderer_detector_delay_thread();
         }
     }
 }
@@ -1666,26 +1690,18 @@ void Steam_Overlay::UnSetupOverlay()
     if (setup_overlay_called.compare_exchange_weak(already_called, false)) {
         is_ready = false;
 
-        // stop internal frame processing & restore cursor
-        if (_renderer) {
-            allow_renderer_frame_processing(false, true);
-            obscure_game_input(false);
+        free_renderer_detector();
 
+        if (_renderer) {
             // for some reason this gets triggered after the overlay instance has been destroyed
             // I assume because the game de-initializes DX later after closing Steam APIs
             // this hacky solution just sets it to an empty function
             _renderer->OverlayHookReady = [](InGameOverlay::OverlayHookState state) {};
-        }
 
-        // allow the future_renderer thread to exit if needed
-        // std::this_thread::sleep_for(std::chrono::milliseconds((int)(renderer_detector_polling_ms * 1.3f)));
-        common_helpers::thisThreadYieldFor(
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::milliseconds((int)(renderer_detector_polling_ms * 1.3f))
-            )
-        );
-        
-        if (_renderer) {
+            // stop internal frame processing & restore cursor
+            allow_renderer_frame_processing(false, true);
+            obscure_game_input(false);
+
             PRINT_DEBUG("Steam_Overlay::UnSetupOverlay will free any images resources\n");
             for (auto &ach : achievements) {
                 if (!ach.icon.expired()) {
@@ -1701,6 +1717,7 @@ void Steam_Overlay::UnSetupOverlay()
 
             _renderer = nullptr;
         }
+
     }
 }
 
