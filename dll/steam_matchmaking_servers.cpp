@@ -565,7 +565,7 @@ gameserveritem_t *Steam_Matchmaking_Servers::GetServerDetails( HServerListReques
         ++g;
     }
 
-    if (iServer >= gameservers_filtered.size() || iServer < 0) {
+    if (iServer >= gameservers_filtered.size() || iServer <= 0) {
         return NULL;
     }
 
